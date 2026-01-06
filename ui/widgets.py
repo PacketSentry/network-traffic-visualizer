@@ -11,7 +11,7 @@ import psutil
 import math
 
 # =========================
-#   1. TRAFFIC GRAPH (FIXED MATH)
+#   1. TRAFFIC GRAPH (CLEAN MATH FIX)
 # =========================
 class TrafficGraph(BoxLayout):
     def __init__(self, **kwargs):
@@ -23,7 +23,7 @@ class TrafficGraph(BoxLayout):
             ylabel='Speed (KB/s)',
             x_ticks_minor=0,
             x_ticks_major=10,
-            y_ticks_major=20,
+            y_ticks_major=100,           # Start with clean 100 steps
             y_grid_label=True,
             x_grid_label=True,
             padding=5,
@@ -47,63 +47,78 @@ class TrafficGraph(BoxLayout):
             self.points_list.pop(0)
             self.points_list = [(x - 1, y) for x, y in self.points_list]
 
-        # --- FIX: Rounding Logic to prevent Overlap ---
+        # --- MATH FIX: Force Multiples of 100 ---
         current_max = max([y for x, y in self.points_list]) if self.points_list else 0
         
-        # 1. Round UP to the nearest 100 (e.g., 140 -> 200, 850 -> 900)
-        # This ensures our ticks are always clean numbers like 0, 20, 40...
-        target_ymax = math.ceil(max(100, current_max * 1.2) / 100) * 100
+        # This formula forces the top number to be 100, 200, 500, etc.
+        # It prevents weird numbers like "863"
+        if current_max < 100:
+            target_ymax = 100
+        else:
+            target_ymax = math.ceil(current_max / 100) * 100
         
         self.graph.ymax = int(target_ymax)
-        self.graph.y_ticks_major = int(target_ymax / 5)
+        
+        # Always divide into exactly 4 clean chunks
+        self.graph.y_ticks_major = int(target_ymax / 4)
+        
         self.plot.points = self.points_list
 
 
 # =========================
-#   2. TABLE HEADER (New!)
+#   2. TABLE HEADER (Visual Guide)
 # =========================
 class TableHeader(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.size_hint_y = None
-        self.height = dp(30)
+        self.height = dp(40)  # Taller header
         self.padding = (dp(10), 0)
         
-        # Column 1: App Name
+        # Column 1
         self.add_widget(Label(text="APPLICATION", size_hint_x=0.5, halign='left', bold=True, color=[1,1,0,1]))
-        # Column 2: Download
+        # Column 2
         self.add_widget(Label(text="DOWNLOAD", size_hint_x=0.25, bold=True, color=[0,1,0,1]))
-        # Column 3: Upload
+        # Column 3
         self.add_widget(Label(text="UPLOAD", size_hint_x=0.25, bold=True, color=[0,0.5,1,1]))
 
+
 # =========================
-#   3. APP ROW (Now a Grid Row)
+#   3. APP ROW (The "Ghost" Fix)
 # =========================
-class AppRow(BoxLayout):  # Changed from Label to BoxLayout
+class AppRow(BoxLayout):
     def __init__(self, app_name, **kwargs):
         super().__init__(**kwargs)
         self.app_name = app_name
+        
+        # CRITICAL FIX: Explicitly set height or it disappears in ScrollView
         self.size_hint_y = None
-        self.height = dp(30)
+        self.height = dp(40)
         self.padding = (dp(10), 0)
 
-        # 1. App Name Label (Left Aligned)
-        self.lbl_name = Label(text=app_name, size_hint_x=0.5, halign='left', shorten=True)
-        self.lbl_name.bind(size=self.lbl_name.setter('text_size')) # Fix text alignment
+        # 1. App Name (White Color)
+        self.lbl_name = Label(
+            text=app_name, 
+            size_hint_x=0.5, 
+            halign='left', 
+            valign='middle',
+            shorten=True,
+            color=[1, 1, 1, 1]  # Force White
+        )
+        self.lbl_name.bind(size=self.lbl_name.setter('text_size'))
         self.add_widget(self.lbl_name)
 
-        # 2. Download Speed (Green)
+        # 2. Download
         self.lbl_down = Label(text="0.00", size_hint_x=0.25, color=[0,1,0,1])
         self.add_widget(self.lbl_down)
 
-        # 3. Upload Speed (Blue)
+        # 3. Upload
         self.lbl_up = Label(text="0.00", size_hint_x=0.25, color=[0,0.5,1,1])
         self.add_widget(self.lbl_up)
 
         self.dropdown = self._create_dropdown()
 
     def update_data(self, down, up):
-        # Update the numbers in the columns
         self.lbl_down.text = f"{down:.2f} KB/s"
         self.lbl_up.text = f"{up:.2f} KB/s"
 
@@ -143,29 +158,31 @@ class AppRow(BoxLayout):  # Changed from Label to BoxLayout
 
 
 # =========================
-#   4. APP DASHBOARD (Updated)
+#   4. APP DASHBOARD (Container Fix)
 # =========================
 class AppDashboard(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = "vertical"
         
-        # Add the Header Row first!
+        # 1. Add Header
         self.add_widget(TableHeader())
         
+        # 2. Create Scrolling Area
+        from kivy.uix.scrollview import ScrollView
+        self.scroll_view = ScrollView(size_hint=(1, 1))
+        
+        # 3. The Container for Rows (Must bind height!)
         self.rows_container = BoxLayout(orientation='vertical', size_hint_y=None)
         self.rows_container.bind(minimum_height=self.rows_container.setter('height'))
         
-        # We wrap rows in a ScrollView in case you have 50 apps
-        from kivy.uix.scrollview import ScrollView
-        scroll = ScrollView(size_hint=(1, 1))
-        scroll.add_widget(self.rows_container)
-        self.add_widget(scroll)
+        self.scroll_view.add_widget(self.rows_container)
+        self.add_widget(self.scroll_view)
         
         self.rows = {}
 
     def update_apps(self, rates):
-        # Remove apps that closed
+        # Delete closed apps
         current_apps = set(rates.keys())
         existing_apps = set(self.rows.keys())
         
@@ -173,12 +190,11 @@ class AppDashboard(BoxLayout):
             self.rows_container.remove_widget(self.rows[app])
             del self.rows[app]
 
-        # Update or Add apps
+        # Add/Update apps
         for app, (down, up) in rates.items():
             if app not in self.rows:
                 row = AppRow(app)
                 self.rows[app] = row
                 self.rows_container.add_widget(row)
             
-            # Use the new update function
             self.rows[app].update_data(down, up)
