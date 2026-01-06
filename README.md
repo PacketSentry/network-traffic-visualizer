@@ -80,7 +80,7 @@ Root privileges are required for packet capture.
 
 ```bat
 git clone https://github.com/your-username/per-app-network-monitor.git
-cd per-app-network-monitor
+cd network-traffic-visualizer
 ```
 
 ```bat
