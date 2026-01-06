@@ -7,7 +7,6 @@ from kivy.metrics import dp
 # --- GRAPH IMPORTS ---
 from kivy_garden.graph import Graph, MeshLinePlot
 import psutil
-import math
 
 # =========================
 #   TRAFFIC GRAPH (FIXED)
@@ -17,31 +16,34 @@ class TrafficGraph(BoxLayout):
         super().__init__(**kwargs)
         self.orientation = 'vertical'
         
-        # 1. Create the Graph with BETTER Spacing
+        # 1. Create the Graph
+        # We use padding=5 so numbers are visible
+        # We use label_options to force text to be White and Bold
         self.graph = Graph(
             xlabel='Time (Seconds)',
             ylabel='Speed (KB/s)',
             x_ticks_minor=0,
-            x_ticks_major=10,            # Show X number every 10 seconds (Less clutter)
+            x_ticks_major=10,            # Show X number every 10 seconds
             y_ticks_major=20,            # Initial Y spacing
             y_grid_label=True,
             x_grid_label=True,
-            padding=25,                  # <--- INCREASED THIS (Fixes text overlap)
+            padding=5,                   # Padding 5 keeps numbers ON screen
             x_grid=True,
             y_grid=True,
             xmin=0, xmax=60,
-            ymin=0, ymax=100             # Start with 100 KB/s max
+            ymin=0, ymax=100,
+            label_options={'color': [1, 1, 1, 1], 'bold': True}
         )
 
-        # 2. Create the Plot
-        self.plot = MeshLinePlot(color=[0, 1, 0, 1])  # Green Line
+        # 2. Create the Plot (The Green Line)
+        self.plot = MeshLinePlot(color=[0, 1, 0, 1])
         self.graph.add_plot(self.plot)
         self.add_widget(self.graph)
 
         self.points_list = [] 
 
     def update_graph(self, value):
-        # 1. Add new value
+        # 1. Add new value to list
         current_x = len(self.points_list)
         self.points_list.append((current_x, value))
 
@@ -50,22 +52,26 @@ class TrafficGraph(BoxLayout):
             self.points_list.pop(0)
             self.points_list = [(x - 1, y) for x, y in self.points_list]
 
-        # 3. INTELLIGENT SCALING (The Fix for the "Wall of Numbers")
-        # We want roughly 5 labels on the Y-axis, no matter how fast the speed is.
-        # If speed is 1000, ticks should be 200. If speed is 100, ticks should be 20.
-        
-        # Calculate ideal max height (add 20% buffer)
+        # 3. INTELLIGENT SCALING (The "Anti-Clutter" Fix)
+        # Calculate the max speed currently in the list
         current_max = max([y for x, y in self.points_list]) if self.points_list else 0
-        target_ymax = max(100, current_max * 1.2) # Never go below 100 KB/s
+        
+        # Target is either 100 KB/s OR the current max + 20% buffer
+        target_ymax = max(100, current_max * 1.2)
         
         self.graph.ymax = int(target_ymax)
-        self.graph.y_ticks_major = int(target_ymax / 5) # Always keep ~5 numbers on Y-axis
+        
+        # This is the magic line:
+        # It ensures we always have exactly 5 ticks on the Y-axis.
+        # If max is 100, ticks are 20. If max is 1000, ticks are 200.
+        self.graph.y_ticks_major = int(target_ymax / 5)
 
-        # 4. Push data
+        # 4. Push data to graph
         self.plot.points = self.points_list
 
+
 # =========================
-#   APP ROW (UNCHANGED)
+#   APP ROW (Standard)
 # =========================
 class AppRow(Label):
     def __init__(self, app_name, **kwargs):
@@ -89,46 +95,4 @@ class AppRow(Label):
             btn.bind(on_release=lambda *_: (callback(), dropdown.dismiss()))
             dropdown.add_widget(btn)
         
-        add_item("Information", self.show_info)
-        add_item("Show Graph", self.show_graph)
-        add_item("Close App", self.close_app)
-        return dropdown
-
-    def on_touch_down(self, touch):
-        if self.collide_point(*touch.pos) and touch.button == "right":
-            self.dropdown.open(self)
-            return True
-        return super().on_touch_down(touch)
-
-    def show_info(self):
-        from kivy.app import App
-        App.get_running_app().show_app_info(self.app_name)
-
-    def show_graph(self):
-        from kivy.app import App
-        App.get_running_app().show_app_graph(self.app_name)
-
-    def close_app(self):
-        for proc in psutil.process_iter(["name"]):
-            try:
-                if proc.info["name"] == self.app_name:
-                    proc.terminate()
-            except Exception:
-                pass
-
-# =========================
-#   APP DASHBOARD (UNCHANGED)
-# =========================
-class AppDashboard(BoxLayout):
-    def __init__(self, **kwargs):
-        super().__init__(**kwargs)
-        self.orientation = "vertical"
-        self.rows = {}
-
-    def update_apps(self, rates):
-        for app, (down, up) in rates.items():
-            if app not in self.rows:
-                row = AppRow(app)
-                self.rows[app] = row
-                self.add_widget(row)
-            self.rows[app].text = f"{app}  |  ⬇ {down:.2f} kbps  |  ⬆ {up:.2f} kbps"
+        add_item("Information", self.show_info
