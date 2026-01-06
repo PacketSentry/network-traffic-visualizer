@@ -1,73 +1,108 @@
-from scapy.all import sniff, TCP
-import psutil
-from core.platform import IS_WINDOWS
-from core.aggregator import add_traffic
+import threading
 import time
+import psutil
+# CHANGED: Added UDP to imports
+from scapy.all import sniff, TCP, IP, UDP
+from core.platform import IS_WINDOWS
 
 if IS_WINDOWS:
     from scapy.all import conf
     conf.use_pcap = True
 
-# Cache port → app for stability
-PORT_CACHE = {}
-CACHE_TIMEOUT = 10  # seconds
+class PacketSniffer:
+    def __init__(self):
+        self.running = False
+        self.traffic_data = {}
+        self.lock = threading.Lock()
+        self.port_cache = {}
+        self.cache_timeout = 10
 
+    def start(self):
+        self.running = True
+        self.thread = threading.Thread(target=self._sniff_loop)
+        self.thread.daemon = True
+        self.thread.start()
 
-def get_process_by_port(port):
-    now = time.time()
+    def stop(self):
+        self.running = False
 
-    # Use cache first
-    if port in PORT_CACHE:
-        app, ts = PORT_CACHE[port]
-        if now - ts < CACHE_TIMEOUT:
-            return app
+    def get_traffic_data(self):
+        with self.lock:
+            data = self.traffic_data.copy()
+            self.traffic_data.clear()
+        return data
 
-    candidates = []
+    def _sniff_loop(self):
+        while self.running:
+            try:
+                # We still filter for IP, but the callback handles TCP vs UDP
+                sniff(prn=self._on_packet, store=False, timeout=1)
+            except Exception as e:
+                print(f"Sniff Error: {e}")
+                time.sleep(1)
 
-    try:
-        for c in psutil.net_connections(kind="inet"):
-            if not c.pid or not c.laddr:
-                continue
+    def _on_packet(self, pkt):
+        if not self.running:
+            return
 
-            if c.laddr.port == port or (c.raddr and c.raddr.port == port):
-                try:
-                    p = psutil.Process(c.pid)
-                    name = p.name()
+        if IP in pkt:
+            try:
+                # CHANGED: Check for BOTH TCP and UDP
+                if TCP in pkt:
+                    layer = TCP
+                elif UDP in pkt:
+                    layer = UDP
+                else:
+                    return # Skip if it's not TCP or UDP
 
-                    # Prefer browsers
-                    if any(b in name.lower() for b in ["chrome", "firefox", "edge"]):
-                        PORT_CACHE[port] = (name, now)
+                size = len(pkt)
+                sport = pkt[layer].sport
+                dport = pkt[layer].dport
+                
+                # Logic to determine direction (same as before)
+                direction = "up"
+                app_port = sport 
+                
+                if self._is_local_port(dport):
+                    direction = "down"
+                    app_port = dport
+                
+                app_name = self._get_process_by_port(app_port)
+
+                with self.lock:
+                    if app_name not in self.traffic_data:
+                        self.traffic_data[app_name] = [0, 0]
+                    
+                    if direction == "down":
+                        self.traffic_data[app_name][0] += size
+                    else:
+                        self.traffic_data[app_name][1] += size
+
+            except Exception:
+                pass
+
+    def _is_local_port(self, port):
+        return True
+
+    def _get_process_by_port(self, port):
+        now = time.time()
+        if port in self.port_cache:
+            app, ts = self.port_cache[port]
+            if now - ts < self.cache_timeout:
+                return app
+
+        # Try to resolve port
+        try:
+            for c in psutil.net_connections(kind="inet"):
+                if c.laddr.port == port:
+                    try:
+                        p = psutil.Process(c.pid)
+                        name = p.name()
+                        self.port_cache[port] = (name, now)
                         return name
-
-                    candidates.append(name)
-                except Exception:
-                    pass
-    except Exception:
-        pass
-
-    if candidates:
-        PORT_CACHE[port] = (candidates[0], now)
-        return candidates[0]
-
-    return "System"
-
-
-def on_packet(pkt):
-    if TCP in pkt:
-        size = len(pkt)
-
-        sport = pkt[TCP].sport
-        dport = pkt[TCP].dport
-
-        app = get_process_by_port(sport)
-        direction = "up"
-
-        if app == "System":
-            app = get_process_by_port(dport)
-            direction = "down"
-
-        add_traffic(app, size, direction)
-
-
-def start_sniffing():
-    sniff(prn=on_packet, store=False)
+                    except:
+                        pass
+        except:
+            pass
+        
+        return "Unknown"
