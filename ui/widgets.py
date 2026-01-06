@@ -2,52 +2,67 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.dropdown import DropDown
 from kivy.uix.button import Button
-from kivy.graphics import Color, Line
 from kivy.metrics import dp
 
+# --- NEW IMPORTS FOR THE GRAPH ---
+from kivy_garden.graph import Graph, MeshLinePlot
 import psutil
 
-
 # =========================
-#   TRAFFIC GRAPH
+#   TRAFFIC GRAPH (UPDATED)
 # =========================
 class TrafficGraph(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.data = []
-        self.max_points = 50
-        self.y_max = 10.0
+        self.orientation = 'vertical'
+        
+        # 1. Create the Graph Object
+        self.graph = Graph(
+            xlabel='Time (Seconds)',     # X-Axis Title
+            ylabel='Speed (KB/s)',       # Y-Axis Title
+            x_ticks_minor=1,
+            x_ticks_major=5,             # Show a number every 5 ticks
+            y_ticks_major=10,            # Show a number every 10 KB/s
+            y_grid_label=True,           # <--- THIS SHOWS THE NUMBERS ON Y-AXIS
+            x_grid_label=True,           # <--- THIS SHOWS THE NUMBERS ON X-AXIS
+            padding=5,
+            x_grid=True,
+            y_grid=True,
+            xmin=0, xmax=50,             # 50 data points history
+            ymin=0, ymax=100             # Initial max Y scale
+        )
+
+        # 2. Create the Plot (The green line)
+        self.plot = MeshLinePlot(color=[0, 1, 0, 1])  # Green Line
+        self.graph.add_plot(self.plot)
+        self.add_widget(self.graph)
+
+        # Internal storage
+        self.points_list = []  # Stores (x, y) coordinates
 
     def update_graph(self, value):
-        if value > self.y_max:
-            self.y_max = value * 1.3
+        # 1. Add new value to list
+        # We use a simple counter for X (0, 1, 2...)
+        current_x = len(self.points_list)
+        self.points_list.append((current_x, value))
 
-        self.data.append(value)
-        if len(self.data) > self.max_points:
-            self.data.pop(0)
+        # 2. Keep only last 50 points (Scrolling effect)
+        if len(self.points_list) > 50:
+            self.points_list.pop(0)
+            # Shift all X values back by 1 so the graph scrolls left
+            self.points_list = [(x - 1, y) for x, y in self.points_list]
 
-        self._draw()
+        # 3. Auto-Scale Y Axis (If speed goes above 100 KB/s, zoom out)
+        if value > self.graph.ymax:
+            self.graph.ymax = value * 1.2
+            self.graph.y_ticks_major = int(self.graph.ymax / 5)
 
-    def set_data(self, data):
-        self.data = data
-        self.y_max = max(data) * 1.3 if data else 10.0
-        self._draw()
-
-    def _draw(self):
-        self.canvas.clear()
-        with self.canvas:
-            Color(0, 1, 0)
-            if len(self.data) > 1:
-                points = []
-                for i, v in enumerate(self.data):
-                    x = self.x + i * (self.width / self.max_points)
-                    y = self.y + (v / self.y_max) * self.height
-                    points.extend([x, y])
-                Line(points=points, width=dp(2))
+        # 4. Push data to graph
+        self.plot.points = self.points_list
 
 
 # =========================
-#   APP ROW (RIGHT CLICK)
+#   APP ROW (UNCHANGED)
 # =========================
 class AppRow(Label):
     def __init__(self, app_name, **kwargs):
@@ -109,7 +124,7 @@ class AppRow(Label):
 
 
 # =========================
-#   APP DASHBOARD
+#   APP DASHBOARD (UNCHANGED)
 # =========================
 class AppDashboard(BoxLayout):
     def __init__(self, **kwargs):
@@ -127,4 +142,3 @@ class AppDashboard(BoxLayout):
             self.rows[app].text = (
                 f"{app}  |  ⬇ {down:.2f} kbps  |  ⬆ {up:.2f} kbps"
             )
-
