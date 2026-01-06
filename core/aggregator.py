@@ -1,39 +1,33 @@
-from collections import defaultdict, deque
 import time
 
-_app_up_bytes = defaultdict(int)
-_app_down_bytes = defaultdict(int)
-_app_history = defaultdict(lambda: deque(maxlen=50))
-_last_time = time.time()
+class TrafficAggregator:
+    def __init__(self):
+        self.last_check_time = time.time()
 
-
-def add_traffic(app, size, direction):
-    if direction == "up":
-        _app_up_bytes[app] += size
-    else:
-        _app_down_bytes[app] += size
-
-
-def get_app_rates():
-    global _last_time
-    now = time.time()
-    elapsed = max(now - _last_time, 0.1)
-
-    rates = {}
-
-    for app in set(_app_up_bytes) | set(_app_down_bytes):
-        up_kbps = (_app_up_bytes[app] * 8) / elapsed / 1000
-        down_kbps = (_app_down_bytes[app] * 8) / elapsed / 1000
-
-        rates[app] = (down_kbps, up_kbps)
-        _app_history[app].append(down_kbps + up_kbps)
-
-    _app_up_bytes.clear()
-    _app_down_bytes.clear()
-    _last_time = now
-
-    return rates
-
-
-def get_app_history(app):
-    return list(_app_history.get(app, []))
+    def calculate_rates(self, traffic_data):
+        """
+        Takes raw bytes data: {'Chrome': [10240, 2048]}
+        Returns speed: {'Chrome': (10.0 KB/s, 2.0 KB/s)}
+        """
+        now = time.time()
+        elapsed = now - self.last_check_time
+        
+        # Avoid division by zero if called too fast
+        if elapsed < 0.1:
+            elapsed = 0.1
+            
+        self.last_check_time = now
+        
+        rates = {}
+        
+        # traffic_data format is: { 'AppName': [Download_Bytes, Upload_Bytes] }
+        for app_name, (down_bytes, up_bytes) in traffic_data.items():
+            
+            # Convert Bytes to Kilobytes (KB)
+            # Divide by 'elapsed' to get Speed per Second
+            down_speed = (down_bytes / 1024) / elapsed
+            up_speed = (up_bytes / 1024) / elapsed
+            
+            rates[app_name] = (down_speed, up_speed)
+            
+        return rates
