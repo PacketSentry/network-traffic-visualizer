@@ -85,7 +85,7 @@ git clone https://github.com/NathPrashant/network-traffic-visualizer.git
 change directory to network-traffic-visualizer via terminal. Eg:
 
 ```bat
-cd C:\Users\xyz\network-traffic-visualizer
+cd network-traffic-visualizer
 ```
 
 ```bat
