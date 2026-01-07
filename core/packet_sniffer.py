@@ -11,7 +11,7 @@ if IS_WINDOWS:
 class PacketSniffer:
     def __init__(self):
         self.running = False
-        self.traffic_data = {}
+        self.traffic_data = {} # Key: (app_name, src_ip, dst_ip), Value: [down, up]
         self.lock = threading.Lock()
         self.port_cache = {}
         self.cache_timeout = 10 
@@ -47,79 +47,67 @@ class PacketSniffer:
             try:
                 size = len(pkt)
                 app_name = "System (Unknown)"
-                direction = "down" # Default assumption
+                direction = "down"
+                src_ip = pkt[IP].src
+                dst_ip = pkt[IP].dst
 
                 # A. Handle TCP/UDP
                 if TCP in pkt or UDP in pkt:
-                    if TCP in pkt:
-                        layer = TCP
-                    else:
-                        layer = UDP
+                    if TCP in pkt: layer = TCP
+                    else: layer = UDP
                         
                     sport = pkt[layer].sport
                     dport = pkt[layer].dport
                     
-                    # LOGIC FIX: Determine direction by checking which port is local
-                    
-                    # 1. Check if DESTINATION port belongs to a local app (Download)
                     app_by_dst = self._get_process_by_port(dport)
                     
                     if app_by_dst != "Unknown":
                         app_name = app_by_dst
                         direction = "down"
                     else:
-                        # 2. Check if SOURCE port belongs to a local app (Upload)
                         app_by_src = self._get_process_by_port(sport)
                         if app_by_src != "Unknown":
                             app_name = app_by_src
                             direction = "up"
                         else:
-                            # 3. Neither port matches a known app
                             app_name = "System (Unknown)"
                             direction = "down"
 
-                # B. Handle ICMP (Ping)
                 elif pkt[IP].proto == 1:
                     app_name = "System (ICMP/Ping)"
                     direction = "down" 
-
-                # C. Handle Other Protocols
                 else:
                     proto_id = pkt[IP].proto
                     app_name = f"System (Proto {proto_id})"
                     direction = "down"
 
-                # Save Data
+                # Update Data with IPs
+                key = (app_name, src_ip, dst_ip)
+                
                 with self.lock:
-                    if app_name not in self.traffic_data:
-                        self.traffic_data[app_name] = [0, 0]
+                    if key not in self.traffic_data:
+                        self.traffic_data[key] = [0, 0]
                     
                     if direction == "down":
-                        self.traffic_data[app_name][0] += size
+                        self.traffic_data[key][0] += size
                     else:
-                        self.traffic_data[app_name][1] += size
+                        self.traffic_data[key][1] += size
 
             except Exception:
                 pass
         
         elif "ARP" in pkt:
-            with self.lock:
-                name = "System (ARP)"
-                if name not in self.traffic_data:
-                    self.traffic_data[name] = [0, 0]
-                self.traffic_data[name][0] += len(pkt)
+            # ARP doesn't have IP layers in the same way, skip or log simply
+            pass
 
     def _get_process_by_port(self, port):
         now = time.time()
-        # 1. Check Cache
         if port in self.port_cache:
             app, ts = self.port_cache[port]
             if now - ts < self.cache_timeout:
                 return app
 
-        # 2. Resolve Port (Expensive)
         try:
-            # We scan connections to find which process owns this port
             for c in psutil.net_connections(kind="inet"):
                 if c.laddr.port == port:
                     try:
@@ -131,5 +119,4 @@ class PacketSniffer:
                         pass
         except:
             pass
-        
         return "Unknown"

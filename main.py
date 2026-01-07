@@ -8,7 +8,7 @@ from kivy.core.window import Window
 
 from core.packet_sniffer import PacketSniffer
 from core.aggregator import TrafficAggregator
-from ui.widgets import TrafficGraph, AppDashboard
+from ui.widgets import TrafficGraph, AppDashboard, LogViewer
 
 class NetworkApp(App):
     def build(self):
@@ -31,14 +31,13 @@ class NetworkApp(App):
 
     def update_ui(self, dt):
         traffic_data = self.sniffer.get_traffic_data()
+        # This now returns simplified rates for UI AND saves detailed logs to DB
         rates = self.aggregator.calculate_rates(traffic_data)
         
-        # Calculate Totals for both Download and Upload
         total_download = sum(down for down, up in rates.values())
         total_upload = sum(up for down, up in rates.values())
         
         if "main_graph" in self.root.ids:
-            # Pass both values to the graph
             self.root.ids.main_graph.update_graph(total_download, total_upload)
 
         if "dashboard" in self.root.ids:
@@ -47,6 +46,12 @@ class NetworkApp(App):
     def save_database(self, dt):
         if hasattr(self, 'aggregator'):
             self.aggregator.save_data()
+
+    def open_db_view(self):
+        """Called by the UI Button to open the Log Viewer"""
+        if hasattr(self, 'aggregator'):
+            viewer = LogViewer(self.aggregator)
+            viewer.open()
 
     def on_stop(self):
         if hasattr(self, 'sniffer'):

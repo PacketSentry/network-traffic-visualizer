@@ -6,16 +6,26 @@ BoxLayout:
     padding: 20
     spacing: 10
 
-    # 1. The Title
-    Label:
-        text: "NetSentry: Live Traffic Monitor"
-        font_size: 24
+    # 1. Header with Title and Logs Button
+    BoxLayout:
         size_hint_y: None
         height: 50
-        bold: True
-        color: 0, 1, 0, 1
+        
+        Label:
+            text: "NetSentry: Live Traffic Monitor"
+            font_size: 24
+            bold: True
+            color: 0, 1, 0, 1
+            halign: 'left'
+            size_hint_x: 0.8
+            text_size: self.size
 
-    # 2. The Main Graph with Legend
+        Button:
+            text: "Logs"
+            size_hint_x: 0.2
+            on_release: app.open_db_view()
+
+    # 2. The Main Graph
     BoxLayout:
         orientation: 'vertical'
         size_hint_y: 0.4
