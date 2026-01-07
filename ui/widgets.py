@@ -2,6 +2,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.label import Label
 from kivy.uix.dropdown import DropDown
 from kivy.uix.button import Button
+from kivy.uix.modalview import ModalView
 from kivy.metrics import dp
 from kivy.graphics import Color, Rectangle
 
@@ -11,7 +12,7 @@ import psutil
 import math
 
 # =========================
-#   1. TRAFFIC GRAPH
+#   1. TRAFFIC GRAPH (Dual Line Support)
 # =========================
 class TrafficGraph(BoxLayout):
     def __init__(self, **kwargs):
@@ -34,20 +35,38 @@ class TrafficGraph(BoxLayout):
             label_options={'color': [1, 1, 1, 1], 'bold': True}
         )
 
-        self.plot = MeshLinePlot(color=[0, 1, 0, 1])
-        self.graph.add_plot(self.plot)
+        # Download Plot (Green)
+        self.plot_down = MeshLinePlot(color=[0, 1, 0, 1])
+        self.graph.add_plot(self.plot_down)
+        
+        # Upload Plot (Blue)
+        self.plot_up = MeshLinePlot(color=[0, 0.5, 1, 1])
+        self.graph.add_plot(self.plot_up)
+        
         self.add_widget(self.graph)
-        self.points_list = [] 
+        
+        # Initialize history for both
+        self.points_down = []
+        self.points_up = []
 
-    def update_graph(self, value):
-        current_x = len(self.points_list)
-        self.points_list.append((current_x, value))
+    def update_graph(self, down_val, up_val):
+        # 1. Update Download Line
+        current_x = len(self.points_down)
+        self.points_down.append((current_x, down_val))
+        self.points_up.append((current_x, up_val))
 
-        if len(self.points_list) > 60:
-            self.points_list.pop(0)
-            self.points_list = [(x - 1, y) for x, y in self.points_list]
+        # Shift X axis if we exceed 60 seconds
+        if len(self.points_down) > 60:
+            self.points_down.pop(0)
+            self.points_up.pop(0)
+            self.points_down = [(x - 1, y) for x, y in self.points_down]
+            self.points_up = [(x - 1, y) for x, y in self.points_up]
 
-        current_max = max([y for x, y in self.points_list]) if self.points_list else 0
+        # 2. Auto-scale Y-Axis based on the HIGHEST value of either line
+        max_down = max([y for x, y in self.points_down]) if self.points_down else 0
+        max_up = max([y for x, y in self.points_up]) if self.points_up else 0
+        current_max = max(max_down, max_up)
+
         if current_max < 100:
             target_ymax = 100
         else:
@@ -55,11 +74,51 @@ class TrafficGraph(BoxLayout):
         
         self.graph.ymax = int(target_ymax)
         self.graph.y_ticks_major = int(target_ymax / 4)
-        self.plot.points = self.points_list
+        
+        # 3. Apply points
+        self.plot_down.points = self.points_down
+        self.plot_up.points = self.points_up
 
 
 # =========================
-#   2. TABLE HEADER
+#   2. APP GRAPH POPUP (New)
+# =========================
+class AppGraphPopup(ModalView):
+    def __init__(self, app_name, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (0.9, 0.7)
+        self.auto_dismiss = True
+        self.app_name = app_name
+        
+        layout = BoxLayout(orientation='vertical', padding=10)
+        
+        # Header
+        header = BoxLayout(size_hint_y=None, height=dp(30))
+        header.add_widget(Label(text=f"Traffic: {app_name}", bold=True, font_size='18sp'))
+        close_btn = Button(text="Close", size_hint_x=None, width=100)
+        close_btn.bind(on_release=self.dismiss)
+        header.add_widget(close_btn)
+        
+        layout.add_widget(header)
+        
+        # Legend
+        legend = BoxLayout(size_hint_y=None, height=dp(30))
+        legend.add_widget(Label(text="Download (Green)", color=[0,1,0,1]))
+        legend.add_widget(Label(text="Upload (Blue)", color=[0,0.5,1,1]))
+        layout.add_widget(legend)
+
+        # The Graph
+        self.graph_widget = TrafficGraph()
+        layout.add_widget(self.graph_widget)
+        
+        self.add_widget(layout)
+
+    def update(self, down, up):
+        self.graph_widget.update_graph(down, up)
+
+
+# =========================
+#   3. TABLE HEADER
 # =========================
 class TableHeader(BoxLayout):
     def __init__(self, **kwargs):
@@ -75,15 +134,16 @@ class TableHeader(BoxLayout):
 
 
 # =========================
-#   3. APP ROW
+#   4. APP ROW
 # =========================
 class AppRow(BoxLayout):
     def __init__(self, app_name, **kwargs):
         super().__init__(**kwargs)
         self.app_name = app_name
         self.size_hint_y = None
-        self.height = dp(40)  # Fixed Height is Critical
+        self.height = dp(40)
         self.padding = (dp(10), 0)
+        self.popup = None  # Reference to the graph popup
 
         # White App Name
         self.lbl_name = Label(
@@ -108,14 +168,22 @@ class AppRow(BoxLayout):
     def update_data(self, down, up):
         self.lbl_down.text = f"{down:.2f} KB/s"
         self.lbl_up.text = f"{up:.2f} KB/s"
+        
+        # If the popup is open, send data to it
+        if self.popup and self.popup.parent:
+            self.popup.update(down, up)
 
     def _create_dropdown(self):
         dropdown = DropDown(auto_width=False, width=dp(160))
+        
         def add_item(text, callback):
             btn = Button(text=text, size_hint_y=None, height=dp(30), font_size="13sp")
             btn.bind(on_release=lambda *_: (callback(), dropdown.dismiss()))
             dropdown.add_widget(btn)
+        
+        add_item("Show Graph", self.open_graph)
         add_item("Close App", self.close_app)
+        
         return dropdown
 
     def on_touch_down(self, touch):
@@ -123,6 +191,11 @@ class AppRow(BoxLayout):
             self.dropdown.open(self)
             return True
         return super().on_touch_down(touch)
+
+    def open_graph(self):
+        if not self.popup:
+            self.popup = AppGraphPopup(self.app_name)
+        self.popup.open()
 
     def close_app(self):
         for proc in psutil.process_iter(["name"]):
@@ -134,7 +207,7 @@ class AppRow(BoxLayout):
 
 
 # =========================
-#   4. APP DASHBOARD (FIXED SCROLLING)
+#   5. APP DASHBOARD
 # =========================
 class AppDashboard(BoxLayout):
     def __init__(self, **kwargs):
@@ -144,11 +217,11 @@ class AppDashboard(BoxLayout):
         # 1. Header
         self.add_widget(TableHeader())
         
-        # 2. Scroll View (Must disable horizontal scroll)
+        # 2. Scroll View
         from kivy.uix.scrollview import ScrollView
         self.scroll_view = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         
-        # 3. Rows Container (Binds height to content)
+        # 3. Rows Container
         self.rows_container = BoxLayout(orientation='vertical', size_hint_y=None)
         self.rows_container.bind(minimum_height=self.rows_container.setter('height'))
         
@@ -158,9 +231,6 @@ class AppDashboard(BoxLayout):
         self.rows = {}
 
     def update_apps(self, rates):
-        # DEBUG: Un-comment this print to see if data is arriving in terminal
-        # print(f"[DEBUG] Updating Apps: {list(rates.keys())}") 
-
         current_apps = set(rates.keys())
         existing_apps = set(self.rows.keys())
         

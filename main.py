@@ -1,4 +1,3 @@
-# --- FIX 2: Disable the Red Dots (Must be at the very top) ---
 from kivy.config import Config
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
@@ -27,31 +26,33 @@ class NetworkApp(App):
         # 3. Schedule UI updates (Every 1 second)
         Clock.schedule_interval(self.update_ui, 1.0)
         
-        # --- NEW: Schedule Database Auto-Save (Every 5 seconds) ---
+        # 4. Schedule Database Auto-Save
         Clock.schedule_interval(self.save_database, 5.0)
 
     def update_ui(self, dt):
         traffic_data = self.sniffer.get_traffic_data()
         rates = self.aggregator.calculate_rates(traffic_data)
+        
+        # Calculate Totals for both Download and Upload
         total_download = sum(down for down, up in rates.values())
+        total_upload = sum(up for down, up in rates.values())
         
         if "main_graph" in self.root.ids:
-            self.root.ids.main_graph.update_graph(total_download)
+            # Pass both values to the graph
+            self.root.ids.main_graph.update_graph(total_download, total_upload)
 
         if "dashboard" in self.root.ids:
             self.root.ids.dashboard.update_apps(rates)
 
     def save_database(self, dt):
-        """Helper function to save data"""
         if hasattr(self, 'aggregator'):
             self.aggregator.save_data()
 
     def on_stop(self):
-        # Clean up threads and Save one last time
         if hasattr(self, 'sniffer'):
             self.sniffer.stop()
         if hasattr(self, 'aggregator'):
-            self.aggregator.save_data() # <--- Final Save
+            self.aggregator.save_data()
 
 if __name__ == "__main__":
     NetworkApp().run()

@@ -10,17 +10,34 @@ BoxLayout:
     Label:
         text: "NetSentry: Live Traffic Monitor"
         font_size: 24
-        size_hint_y: None   # Fixed height
+        size_hint_y: None
         height: 50
         bold: True
         color: 0, 1, 0, 1
 
-    # 2. The Graph (Takes 40% of screen)
-    TrafficGraph:
-        id: main_graph
+    # 2. The Main Graph with Legend
+    BoxLayout:
+        orientation: 'vertical'
         size_hint_y: 0.4
+        
+        TrafficGraph:
+            id: main_graph
+        
+        # Legend
+        BoxLayout:
+            size_hint_y: None
+            height: 30
+            spacing: 20
+            Label:
+                text: "Download (Green)"
+                color: 0, 1, 0, 1
+                bold: True
+            Label:
+                text: "Upload (Blue)"
+                color: 0, 0.5, 1, 1
+                bold: True
 
-    # 3. The App List (Takes remaining 60% of screen)
+    # 3. The App List
     AppDashboard:
         id: dashboard
         size_hint_y: 0.6
