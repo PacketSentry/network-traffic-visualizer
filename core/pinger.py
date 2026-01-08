@@ -11,11 +11,11 @@ class NetworkPinger:
         # TARGETS:
         # 1. Cloudflare (1.1.1.1)
         # 2. Google (8.8.8.8)
-        # 3. MTNL Mumbai (mtnl.net.in) - Mumbai's Main ISP Web Server
+        # 3. IIT Bombay (www.iitb.ac.in) - Physically in Powai, Mumbai
         self.targets = {
             "Cloudflare (1.1.1.1)": "1.1.1.1",
             "Google (8.8.8.8)": "8.8.8.8",
-            "Mumbai Server": "mtnl.net.in" 
+            "Mumbai Server": "www.iitb.ac.in" 
         }
         self.pings = {name: 0.0 for name in self.targets}
 
@@ -37,7 +37,7 @@ class NetworkPinger:
                 if not self.running: break
                 latency = self._measure_ping(ip)
                 
-                # DEBUG: Print to terminal to verify it's working
+                # DEBUG: Watch this line in your terminal!
                 if name == "Mumbai Server":
                     print(f"[DEBUG] Ping to {name} ({ip}): {latency} ms")
 
@@ -49,8 +49,8 @@ class NetworkPinger:
         try:
             param = '-n' if platform.system().lower() == 'windows' else '-c'
             
-            # Using 'ping' command which handles domains (mtnl.net.in) automatically
-            command = ['ping', param, '1', '-w', '1000', ip]
+            # -w 2000: Increased timeout to 2 seconds just in case
+            command = ['ping', param, '1', '-w', '2000', ip]
             
             startupinfo = None
             if platform.system() == "Windows":
@@ -59,10 +59,10 @@ class NetworkPinger:
             
             output = subprocess.check_output(command, startupinfo=startupinfo, text=True)
             
+            # Regex to catch "time=24ms" or "time<1ms"
             match = re.search(r"time[=<](\d+[\.]?\d*)", output)
             if match:
                 return float(match.group(1))
             return 0.0 
-        except Exception as e:
-            print(f"Ping Error: {e}")
+        except Exception:
             return 0.0
