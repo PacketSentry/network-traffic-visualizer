@@ -309,4 +309,137 @@ class AppDashboard(BoxLayout):
             self.rows[app_name].update_data(down, up)
             self.rows_container.add_widget(self.rows[app_name])
 
-# ... (LogViewer classes remain unchanged)
+
+# =========================
+#   6. LOG VIEWER CLASSES (RESTORED!)
+# =========================
+
+class LogRow(BoxLayout):
+    def __init__(self, log_entry, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint_y = None
+        self.height = dp(30)
+        self.log_entry = log_entry # (ts, app, down, up, src, dst)
+        
+        ts = datetime.datetime.fromtimestamp(log_entry[0]).strftime('%H:%M:%S')
+        self.add_widget(Label(text=ts, size_hint_x=0.15))
+        
+        self.app_name = log_entry[1]
+        self.add_widget(Label(text=self.app_name, size_hint_x=0.25, shorten=True))
+        
+        spd = f"D:{log_entry[2]:.1f} U:{log_entry[3]:.1f}"
+        self.add_widget(Label(text=spd, size_hint_x=0.2))
+        
+        ips = f"{log_entry[4]} -> {log_entry[5]}"
+        self.add_widget(Label(text=ips, size_hint_x=0.4, font_size='11sp'))
+
+        self.dropdown = DropDown()
+        btn_loc = Button(text="Open Location", size_hint_y=None, height=dp(30))
+        btn_loc.bind(on_release=lambda x: (self.open_location(), self.dropdown.dismiss()))
+        self.dropdown.add_widget(btn_loc)
+
+    def on_touch_down(self, touch):
+        if self.collide_point(*touch.pos) and touch.button == "right":
+            self.dropdown.open(self)
+            return True
+        return super().on_touch_down(touch)
+
+    def open_location(self):
+        exe_path = None
+        for proc in psutil.process_iter(['name', 'exe']):
+            try:
+                if proc.info['name'] == self.app_name:
+                    exe_path = proc.info['exe']
+                    break
+            except: pass
+        
+        if exe_path and os.path.exists(exe_path):
+            if platform.system() == "Windows":
+                subprocess.Popen(['explorer', '/select,', exe_path])
+            elif platform.system() == "Linux":
+                subprocess.Popen(['xdg-open', os.path.dirname(exe_path)])
+        else:
+            print(f"Path not found for {self.app_name}")
+
+
+class LogViewer(ModalView):
+    def __init__(self, aggregator, **kwargs):
+        super().__init__(**kwargs)
+        self.aggregator = aggregator
+        self.size_hint = (0.95, 0.9)
+        self.current_logs = []
+        
+        layout = BoxLayout(orientation='vertical', padding=10)
+        
+        # Header
+        header = BoxLayout(size_hint_y=None, height=dp(40), spacing=10)
+        header.add_widget(Label(text="Instance Logs", bold=True, font_size='20sp', size_hint_x=0.3))
+        
+        self.search_input = TextInput(hint_text="Search App Name...", size_hint_x=0.5, multiline=False)
+        self.search_input.bind(text=self.on_search)
+        header.add_widget(self.search_input)
+        
+        btn_close = Button(text="Close", size_hint_x=0.2)
+        btn_close.bind(on_release=self.dismiss)
+        header.add_widget(btn_close)
+        layout.add_widget(header)
+
+        # Actions
+        actions = BoxLayout(size_hint_y=None, height=dp(40), spacing=10)
+        btn_refresh = Button(text="Refresh", size_hint_x=None, width=100)
+        btn_refresh.bind(on_release=self.refresh_logs)
+        actions.add_widget(btn_refresh)
+        
+        btn_export = Button(text="Export to CSV", size_hint_x=None, width=120)
+        btn_export.bind(on_release=self.export_csv)
+        actions.add_widget(btn_export)
+        actions.add_widget(Label(text="")) # Spacer
+        layout.add_widget(actions)
+        
+        # Columns
+        headers = BoxLayout(size_hint_y=None, height=dp(30))
+        headers.add_widget(Label(text="Time", size_hint_x=0.15, bold=True, color=[1,1,0,1]))
+        headers.add_widget(Label(text="App", size_hint_x=0.25, bold=True, color=[1,1,0,1]))
+        headers.add_widget(Label(text="Speed (KB/s)", size_hint_x=0.2, bold=True, color=[1,1,0,1]))
+        headers.add_widget(Label(text="Src -> Dst IP", size_hint_x=0.4, bold=True, color=[1,1,0,1]))
+        layout.add_widget(headers)
+
+        # List
+        self.scroll = ScrollView()
+        self.list_container = BoxLayout(orientation='vertical', size_hint_y=None)
+        self.list_container.bind(minimum_height=self.list_container.setter('height'))
+        self.scroll.add_widget(self.list_container)
+        layout.add_widget(self.scroll)
+        self.add_widget(layout)
+        
+        self.refresh_logs()
+
+    def on_search(self, instance, value):
+        self.refresh_logs()
+
+    def refresh_logs(self, *args):
+        self.list_container.clear_widgets()
+        search_text = self.search_input.text.strip()
+        self.current_logs = self.aggregator.get_logs(app_filter=search_text if search_text else None)
+        for log in self.current_logs:
+            self.list_container.add_widget(LogRow(log))
+
+    def export_csv(self, *args):
+        if not self.current_logs: return
+        filename = f"traffic_logs_{int(time.time())}.csv"
+        try:
+            with open(filename, 'w', newline='') as f:
+                writer = csv.writer(f)
+                writer.writerow(["Timestamp", "App Name", "Download (KB/s)", "Upload (KB/s)", "Src IP", "Dst IP"])
+                for log in self.current_logs:
+                    ts_str = datetime.datetime.fromtimestamp(log[0]).strftime('%Y-%m-%d %H:%M:%S')
+                    writer.writerow([ts_str, log[1], log[2], log[3], log[4], log[5]])
+            
+            print(f"Exported to {filename}")
+            # Button feedback
+            original_text = args[0].text
+            args[0].text = "Saved!"
+            from kivy.clock import Clock
+            Clock.schedule_once(lambda dt: setattr(args[0], 'text', original_text), 2)
+        except Exception as e:
+            print(f"Export Error: {e}")
