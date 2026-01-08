@@ -8,13 +8,16 @@ class NetworkPinger:
     def __init__(self):
         self.running = False
         self.lock = threading.Lock()
-        # TARGETS: Cloudflare, Google, Valve (Mumbai Relay)
+        # TARGETS: 
+        # 1. Cloudflare (Anycast - connects to nearest city, likely Mumbai/Delhi)
+        # 2. Google (Anycast)
+        # 3. Mumbai Data Center (Linode Mumbai) - Acts as a proxy for CS2 Mumbai latency
         self.targets = {
             "Cloudflare (1.1.1.1)": "1.1.1.1",
             "Google (8.8.8.8)": "8.8.8.8",
-            "CS2 (Valve Mumbai)": "155.133.233.98" # Valve Relay in Mumbai
+            "CS2 (Mumbai Proxy)": "139.162.200.1" 
         }
-        # Store latest ping results: {'Google': 12.5, 'CS2': 45.0}
+        # Store latest ping results
         self.pings = {name: 0.0 for name in self.targets}
 
     def start(self):
@@ -44,9 +47,11 @@ class NetworkPinger:
             # -n 1 (Windows) or -c 1 (Linux) -> Send 1 packet
             # -w 1000 -> Timeout 1000ms
             param = '-n' if platform.system().lower() == 'windows' else '-c'
+            
+            # Use shell=True to hide window properly on some Windows versions
+            # But normally specific startupinfo flags are cleaner (used below)
             command = ['ping', param, '1', '-w', '1000', ip]
             
-            # Hide the console window on Windows
             startupinfo = None
             if platform.system() == "Windows":
                 startupinfo = subprocess.STARTUPINFO()
@@ -54,11 +59,10 @@ class NetworkPinger:
             
             output = subprocess.check_output(command, startupinfo=startupinfo, text=True)
             
-            # Extract time=XXms using Regex
-            # Windows: "time=24ms", Linux: "time=24.5 ms"
+            # Extract time=XXms
             match = re.search(r"time[=<](\d+[\.]?\d*)", output)
             if match:
                 return float(match.group(1))
-            return 0.0 # Timeout or Error
+            return 0.0 # Timeout
         except Exception:
-            return 0.0 # Offline
+            return 0.0 # Error/Offline
