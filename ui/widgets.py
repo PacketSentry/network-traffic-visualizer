@@ -23,7 +23,7 @@ COLOR_DOWN = [0, 1, 0, 1]       # Green
 COLOR_UP   = [0.2, 0.8, 1, 1]   # Bright Sky Blue
 COLOR_TEXT = [1, 1, 1, 1]       # White
 
-# New Colors for Ping
+# New Colors for Ping (Only 2 Needed)
 COLOR_PING_CF = [1, 0.5, 0, 1]  # Orange (Cloudflare)
 COLOR_PING_G  = [1, 1, 0, 1]    # Yellow (Google)
 
@@ -90,7 +90,7 @@ class TrafficGraph(BoxLayout):
 
 
 # =========================
-#   2. PING GRAPH (NEW!)
+#   2. PING GRAPH (Cleaned - 2 Lines)
 # =========================
 class PingGraph(BoxLayout):
     def __init__(self, **kwargs):
@@ -100,11 +100,11 @@ class PingGraph(BoxLayout):
             xlabel='Time (Seconds)', ylabel='Latency (ms)',
             x_ticks_minor=0, x_ticks_major=10, y_ticks_major=20,
             y_grid_label=True, x_grid_label=True, padding=5,
-            x_grid=True, y_grid=True, xmin=0, xmax=60, ymin=0, ymax=200, # Max 200ms
+            x_grid=True, y_grid=True, xmin=0, xmax=60, ymin=0, ymax=200, 
             label_options={'color': [1, 1, 1, 1], 'bold': True}
         )
         
-        # 3 Lines for 3 Servers
+        # 2 Lines for 2 Servers (Cloudflare & Google)
         self.plot_cf = LinePlot(color=COLOR_PING_CF, line_width=2)
         self.plot_g  = LinePlot(color=COLOR_PING_G, line_width=2)
 
@@ -128,10 +128,10 @@ class PingGraph(BoxLayout):
             self.points_cf = [(x - 1, y) for x, y in self.points_cf]
             self.points_g = [(x - 1, y) for x, y in self.points_g]
 
-        # Auto-scale Y Axis (if ping > 200ms, graph expands)
+        # Auto-scale Y Axis
         max_v = max(
             max([y for x, y in self.points_cf] or [0]), 
-            max([y for x, y in self.points_g] or [0]),
+            max([y for x, y in self.points_g] or [0])
         )
         target_ymax = max(100, math.ceil(max_v / 50) * 50) # Steps of 50ms
         self.graph.ymax = int(target_ymax)
@@ -139,7 +139,6 @@ class PingGraph(BoxLayout):
 
         self.plot_cf.points = self.points_cf
         self.plot_g.points = self.points_g
-
 
 # =========================
 #   3. GRAPH POPUP
