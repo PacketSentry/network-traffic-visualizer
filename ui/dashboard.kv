@@ -1,26 +1,102 @@
 #:import TrafficGraph ui.widgets.TrafficGraph
+#:import PingGraph ui.widgets.PingGraph
 #:import AppDashboard ui.widgets.AppDashboard
+
+<TabbedPanelItem>:
+    font_size: '15sp'
+    bold: True
 
 BoxLayout:
     orientation: 'vertical'
-    padding: 20
+    padding: 10
     spacing: 10
 
-    # 1. The Title
-    Label:
-        text: "NetSentry: Live Traffic Monitor"
-        font_size: 24
-        size_hint_y: None   # Fixed height
+    # 1. Header with Title and Logs Button
+    BoxLayout:
+        size_hint_y: None
         height: 50
-        bold: True
-        color: 0, 1, 0, 1
+        
+        Label:
+            text: "NetSentry: Live Traffic Monitor"
+            font_size: 24
+            bold: True
+            color: 0, 1, 0, 1
+            halign: 'left'
+            size_hint_x: 0.8
+            text_size: self.size
 
-    # 2. The Graph (Takes 40% of screen)
-    TrafficGraph:
-        id: main_graph
-        size_hint_y: 0.4
+        Button:
+            text: "Logs / History"
+            size_hint_x: 0.2
+            on_release: app.open_db_view()
 
-    # 3. The App List (Takes remaining 60% of screen)
-    AppDashboard:
-        id: dashboard
-        size_hint_y: 0.6
+    # 2. Main Tabbed Panel
+    TabbedPanel:
+        do_default_tab: False
+
+        # --- TAB 1: TRAFFIC MONITOR ---
+        TabbedPanelItem:
+            text: "Traffic Monitor"
+            
+            BoxLayout:
+                orientation: 'vertical'
+                padding: 10
+                spacing: 10
+                
+                # Traffic Graph
+                BoxLayout:
+                    orientation: 'vertical'
+                    size_hint_y: 0.4
+                    TrafficGraph:
+                        id: main_graph
+                    
+                    BoxLayout:
+                        size_hint_y: None
+                        height: 30
+                        spacing: 20
+                        Label:
+                            text: "Download (Green)"
+                            color: 0, 1, 0, 1
+                            bold: True
+                        Label:
+                            text: "Upload (Sky Blue)"
+                            color: 0.2, 0.8, 1, 1
+                            bold: True
+                
+                # App List
+                AppDashboard:
+                    id: dashboard
+                    size_hint_y: 0.6
+
+        # --- TAB 2: GAMER MODE (LATENCY) ---
+        TabbedPanelItem:
+            text: "Gamer Latency"
+            
+            BoxLayout:
+                orientation: 'vertical'
+                padding: 10
+                spacing: 10
+                
+                # Ping Graph
+                BoxLayout:
+                    orientation: 'vertical'
+                    PingGraph:
+                        id: ping_graph
+                    
+                    # Legend for Servers
+                    BoxLayout:
+                        size_hint_y: None
+                        height: 30
+                        spacing: 20
+                        Label:
+                            text: "Google 8.8.8.8 (Yellow)"
+                            color: 1, 1, 0, 1
+                            bold: True
+                        Label:
+                            text: "Cloudflare 1.1.1.1 (Orange)"
+                            color: 1, 0.5, 0, 1
+                            bold: True
+                        Label:
+                            text: "CS2 Mumbai (Red)"
+                            color: 1, 0, 0, 1
+                            bold: True
