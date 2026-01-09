@@ -9,7 +9,7 @@ from kivy.core.window import Window
 from core.packet_sniffer import PacketSniffer
 from core.aggregator import TrafficAggregator
 from core.pinger import NetworkPinger  
-from ui.widgets import TrafficGraph, AppDashboard, LogViewer, PingGraph
+from ui.widgets import TrafficGraph, AppDashboard, LogViewer, PingGraph, LoginPopup
 
 class NetworkApp(App):
     def build(self):
@@ -35,7 +35,6 @@ class NetworkApp(App):
     def update_ui(self, dt):
         # --- Update Traffic Tab ---
         traffic_data = self.sniffer.get_traffic_data()
-        # This now returns simplified rates for UI AND saves detailed logs to DB
         rates = self.aggregator.calculate_rates(traffic_data)
         
         if "main_graph" in self.root.ids:
@@ -49,7 +48,6 @@ class NetworkApp(App):
         # --- Update Latency Tab ---
         if "ping_graph" in self.root.ids:
             pings = self.pinger.get_pings()
-            # Send data for just the two active lines
             self.root.ids.ping_graph.update_graph(
                 pings.get("Cloudflare (1.1.1.1)", 0),
                 pings.get("Google (8.8.8.8)", 0)
@@ -63,6 +61,25 @@ class NetworkApp(App):
         """Opens the Log Viewer Popup"""
         viewer = LogViewer(self.aggregator)
         viewer.open()
+
+    # --- LOGIN LOGIC ---
+    def open_login_view(self):
+        # If already logged in, this button acts as Logout
+        if self.aggregator.cloud.token:
+            self.aggregator.cloud.logout()
+            self.root.ids.login_btn.text = "Cloud Login"
+            return
+
+        popup = LoginPopup(self.perform_login)
+        popup.open()
+
+    def perform_login(self, username, password, popup_instance):
+        success = self.aggregator.cloud.login(username, password)
+        if success:
+            popup_instance.dismiss()
+            self.root.ids.login_btn.text = f"Logout ({username})"
+        else:
+            popup_instance.show_error("Invalid Credentials or Connection Failed")
 
     def on_stop(self):
         if hasattr(self, 'sniffer'): self.sniffer.stop()

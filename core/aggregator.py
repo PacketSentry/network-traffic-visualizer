@@ -1,6 +1,6 @@
 import time
 from core.database import DatabaseManager
-from core.cloud_client import CloudClient # <--- IMPORT THIS
+from core.cloud_client import CloudClient
 
 class TrafficAggregator:
     def __init__(self):
@@ -8,8 +8,8 @@ class TrafficAggregator:
         self.db = DatabaseManager()
         self.global_totals = self.db.load_traffic()
         
-        # Initialize Cloud Client
-        self.cloud = CloudClient() # <--- INITIALIZE
+        # Initialize Cloud Client (starts in logged-out state)
+        self.cloud = CloudClient()
 
     def calculate_rates(self, fresh_traffic_data):
         now = time.time()
@@ -41,11 +41,14 @@ class TrafficAggregator:
                     now, app_name, down_speed, up_speed, src_ip, dst_ip
                 ))
 
+        # 1. Save logs locally and queue for cloud upload
         if log_entries:
-            # Save to Local DB
             self.db.log_instances(log_entries)
-            # Send to Cloud
-            self.cloud.add_logs(log_entries) # <--- PUSH TO CLOUD
+            self.cloud.add_logs(log_entries)
+            
+        # 2. [NEW] Send Live Status (Active Apps) to Cloud Client
+        # This allows the web dashboard to see real-time apps and show the "Close" button.
+        self.cloud.update_status(current_rates_ui)
             
         return current_rates_ui
 

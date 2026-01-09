@@ -23,7 +23,7 @@ COLOR_DOWN = [0, 1, 0, 1]       # Green
 COLOR_UP   = [0.2, 0.8, 1, 1]   # Bright Sky Blue
 COLOR_TEXT = [1, 1, 1, 1]       # White
 
-# New Colors for Ping (Only 2 Needed)
+# New Colors for Ping
 COLOR_PING_CF = [1, 0.5, 0, 1]  # Orange (Cloudflare)
 COLOR_PING_G  = [1, 1, 0, 1]    # Yellow (Google)
 
@@ -46,7 +46,65 @@ class HoverButton(Button):
             self.background_color = (0, 0, 0, 0)
 
 # =========================
-#   1. TRAFFIC GRAPH (Standard)
+#   LOGIN POPUP (NEW)
+# =========================
+class LoginPopup(ModalView):
+    def __init__(self, login_callback, **kwargs):
+        super().__init__(**kwargs)
+        self.size_hint = (None, None)
+        self.size = (dp(300), dp(250))
+        self.auto_dismiss = False
+        self.login_callback = login_callback
+
+        layout = BoxLayout(orientation='vertical', padding=20, spacing=10)
+        
+        # Title
+        layout.add_widget(Label(text="Cloud Login", font_size='18sp', bold=True, size_hint_y=None, height=dp(30)))
+        
+        # Username
+        self.user_input = TextInput(hint_text="Username", multiline=False, size_hint_y=None, height=dp(35))
+        layout.add_widget(self.user_input)
+
+        # Password
+        self.pass_input = TextInput(hint_text="Password", password=True, multiline=False, size_hint_y=None, height=dp(35))
+        layout.add_widget(self.pass_input)
+
+        # Error Label
+        self.error_label = Label(text="", color=(1, 0, 0, 1), font_size='12sp', size_hint_y=None, height=dp(20))
+        layout.add_widget(self.error_label)
+
+        # Buttons
+        btn_box = BoxLayout(size_hint_y=None, height=dp(40), spacing=10)
+        
+        btn_cancel = Button(text="Cancel", background_color=(0.5, 0.5, 0.5, 1))
+        btn_cancel.bind(on_release=self.dismiss)
+        
+        btn_login = Button(text="Login", background_color=(0, 0.8, 0, 1))
+        btn_login.bind(on_release=self.do_login)
+        
+        btn_box.add_widget(btn_cancel)
+        btn_box.add_widget(btn_login)
+        layout.add_widget(btn_box)
+
+        self.add_widget(layout)
+
+    def do_login(self, instance):
+        username = self.user_input.text.strip()
+        password = self.pass_input.text.strip()
+        
+        if not username or not password:
+            self.error_label.text = "Fields cannot be empty"
+            return
+
+        self.error_label.text = "Logging in..."
+        # Trigger the callback in main thread
+        self.login_callback(username, password, self)
+
+    def show_error(self, message):
+        self.error_label.text = message
+
+# =========================
+#   1. TRAFFIC GRAPH
 # =========================
 class TrafficGraph(BoxLayout):
     def __init__(self, **kwargs):
@@ -88,9 +146,8 @@ class TrafficGraph(BoxLayout):
         self.plot_down.points = self.points_down
         self.plot_up.points = self.points_up
 
-
 # =========================
-#   2. PING GRAPH (Cleaned - 2 Lines)
+#   2. PING GRAPH
 # =========================
 class PingGraph(BoxLayout):
     def __init__(self, **kwargs):
@@ -104,7 +161,6 @@ class PingGraph(BoxLayout):
             label_options={'color': [1, 1, 1, 1], 'bold': True}
         )
         
-        # 2 Lines for 2 Servers (Cloudflare & Google)
         self.plot_cf = LinePlot(color=COLOR_PING_CF, line_width=2)
         self.plot_g  = LinePlot(color=COLOR_PING_G, line_width=2)
 
@@ -121,19 +177,17 @@ class PingGraph(BoxLayout):
         self.points_cf.append((current_x, ping_cf))
         self.points_g.append((current_x, ping_g))
 
-        # Keep only last 60 seconds
         if len(self.points_cf) > 60:
             self.points_cf.pop(0)
             self.points_g.pop(0)
             self.points_cf = [(x - 1, y) for x, y in self.points_cf]
             self.points_g = [(x - 1, y) for x, y in self.points_g]
 
-        # Auto-scale Y Axis
         max_v = max(
             max([y for x, y in self.points_cf] or [0]), 
             max([y for x, y in self.points_g] or [0])
         )
-        target_ymax = max(100, math.ceil(max_v / 50) * 50) # Steps of 50ms
+        target_ymax = max(100, math.ceil(max_v / 50) * 50)
         self.graph.ymax = int(target_ymax)
         self.graph.y_ticks_major = int(target_ymax / 5)
 
@@ -161,7 +215,6 @@ class AppGraphPopup(ModalView):
 
     def update(self, down, up):
         self.graph_widget.update_graph(down, up)
-
 
 # =========================
 #   4. TABLE COMPONENTS

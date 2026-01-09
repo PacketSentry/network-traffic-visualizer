@@ -1,49 +1,54 @@
-import threading
-import requests
-import json
-import time
+import threading, requests, time
+from core.system_control import kill_process_by_name
 
-# --- CONFIGURATION ---
-SERVER_URL = "http://127.0.0.1:5000/api/upload"
-# REPLACE THIS WITH THE KEY FROM YOUR DASHBOARD AFTER REGISTERING
-API_KEY = "REPLACE_WITH_YOUR_API_KEY" 
+BASE_URL = "http://127.0.0.1:5000/api"
 
 class CloudClient:
     def __init__(self):
         self.queue = []
+        self.latest_status = []
         self.lock = threading.Lock()
         self.running = True
-        self.worker = threading.Thread(target=self._worker_loop, daemon=True)
-        self.worker.start()
+        self.token = None
+        threading.Thread(target=self._worker, daemon=True).start()
 
-    def add_logs(self, log_entries):
-        """Add logs to the upload queue"""
-        if not API_KEY or "REPLACE" in API_KEY:
-            return # Not configured yet
+    def login(self, username, password):
+        try:
+            r = requests.post(f"{BASE_URL}/login", json={"username": username, "password": password})
+            if r.status_code == 200: self.token = r.json().get("access_token"); return True
+        except: pass
+        return False
 
-        with self.lock:
-            self.queue.extend(log_entries)
+    def update_status(self, rates):
+        """Prepares live status list: [{'name': 'Chrome', 'down': 50.0, 'up': 2.0}, ...]"""
+        if not self.token: return
+        status = []
+        for app, (down, up) in rates.items():
+            if down > 0.1 or up > 0.1: status.append({"name": app, "down": down, "up": up})
+        with self.lock: self.latest_status = status
 
-    def _worker_loop(self):
+    def add_logs(self, logs):
+        if self.token:
+            with self.lock: self.queue.extend(logs)
+
+    def _worker(self):
         while self.running:
-            time.sleep(5) # Upload every 5 seconds
+            time.sleep(2)
+            if not self.token: continue
             
-            payload = []
             with self.lock:
-                if not self.queue:
-                    continue
-                # Take chunk of logs
-                payload = self.queue[:50]
+                logs_chunk = self.queue[:50]
                 del self.queue[:50]
+                current_status = self.latest_status
 
-            if payload:
-                try:
-                    requests.post(
-                        SERVER_URL, 
-                        json={"api_key": API_KEY, "logs": payload},
-                        timeout=3
-                    )
-                    print(f"Uploaded {len(payload)} logs to cloud.")
-                except Exception as e:
-                    print(f"Cloud Upload Failed: {e}")
-                    # Optionally put back in queue, but discarding prevents memory leaks for now
+            try:
+                r = requests.post(
+                    f"{BASE_URL}/sync",
+                    json={"logs": logs_chunk, "status": current_status},
+                    headers={"Authorization": f"Bearer {self.token}"}, timeout=3
+                )
+                # Execute Commands (e.g., Kill App)
+                if r.status_code == 200:
+                    for cmd in r.json().get("commands", []):
+                        if cmd['action'] == 'kill': kill_process_by_name(cmd['target'])
+            except: pass
