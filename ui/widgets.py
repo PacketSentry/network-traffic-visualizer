@@ -8,7 +8,6 @@ from kivy.uix.textinput import TextInput
 from kivy.metrics import dp
 from kivy.graphics import Color, Rectangle
 from kivy.core.window import Window
-# Using LinePlot for thicker, visible lines
 from kivy_garden.graph import Graph, LinePlot 
 import psutil
 import math
@@ -24,31 +23,30 @@ COLOR_DOWN = [0, 1, 0, 1]       # Green
 COLOR_UP   = [0.2, 0.8, 1, 1]   # Bright Sky Blue
 COLOR_TEXT = [1, 1, 1, 1]       # White
 
+# New Colors for Ping (Only 2 Needed)
+COLOR_PING_CF = [1, 0.5, 0, 1]  # Orange (Cloudflare)
+COLOR_PING_G  = [1, 1, 0, 1]    # Yellow (Google)
+
 # =========================
 #   CUSTOM HOVER BUTTON
 # =========================
 class HoverButton(Button):
-    """A button that shows a faint highlight on hover."""
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.background_normal = ''  # Remove default Kivy background image
-        self.background_color = (0, 0, 0, 0)  # Start transparent
-        # A faint, transparent grey for the hover effect
+        self.background_normal = ''
+        self.background_color = (0, 0, 0, 0)
         self.hover_color = (0.5, 0.5, 0.5, 0.2) 
         Window.bind(mouse_pos=self.on_mouse_pos)
 
     def on_mouse_pos(self, window, pos):
-        if not self.get_root_window():
-            return # Button not yet on screen
-        
-        # Check if the mouse is over this button widget
+        if not self.get_root_window(): return
         if self.collide_point(*self.to_widget(*pos)):
             self.background_color = self.hover_color
         else:
             self.background_color = (0, 0, 0, 0)
 
 # =========================
-#   1. TRAFFIC GRAPH
+#   1. TRAFFIC GRAPH (Standard)
 # =========================
 class TrafficGraph(BoxLayout):
     def __init__(self, **kwargs):
@@ -61,7 +59,6 @@ class TrafficGraph(BoxLayout):
             x_grid=True, y_grid=True, xmin=0, xmax=60, ymin=0, ymax=100,
             label_options={'color': [1, 1, 1, 1], 'bold': True}
         )
-        # Using LinePlot with line_width=2 for visibility
         self.plot_down = LinePlot(color=COLOR_DOWN, line_width=2)
         self.plot_up = LinePlot(color=COLOR_UP, line_width=2)
         self.graph.add_plot(self.plot_down)
@@ -85,31 +82,78 @@ class TrafficGraph(BoxLayout):
             max([y for x, y in self.points_down] or [0]), 
             max([y for x, y in self.points_up] or [0])
         )
-        
         target_ymax = max(100, math.ceil(max_v / 100) * 100)
         self.graph.ymax = int(target_ymax)
         self.graph.y_ticks_major = int(target_ymax / 4)
-        
         self.plot_down.points = self.points_down
         self.plot_up.points = self.points_up
 
 
 # =========================
-#   2. APP GRAPH POPUP
+#   2. PING GRAPH (Cleaned - 2 Lines)
+# =========================
+class PingGraph(BoxLayout):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self.orientation = 'vertical'
+        self.graph = Graph(
+            xlabel='Time (Seconds)', ylabel='Latency (ms)',
+            x_ticks_minor=0, x_ticks_major=10, y_ticks_major=20,
+            y_grid_label=True, x_grid_label=True, padding=5,
+            x_grid=True, y_grid=True, xmin=0, xmax=60, ymin=0, ymax=200, 
+            label_options={'color': [1, 1, 1, 1], 'bold': True}
+        )
+        
+        # 2 Lines for 2 Servers (Cloudflare & Google)
+        self.plot_cf = LinePlot(color=COLOR_PING_CF, line_width=2)
+        self.plot_g  = LinePlot(color=COLOR_PING_G, line_width=2)
+
+        self.graph.add_plot(self.plot_cf)
+        self.graph.add_plot(self.plot_g)
+        
+        self.add_widget(self.graph)
+        self.points_cf = []
+        self.points_g = []
+
+    def update_graph(self, ping_cf, ping_g):
+        current_x = len(self.points_cf)
+        
+        self.points_cf.append((current_x, ping_cf))
+        self.points_g.append((current_x, ping_g))
+
+        # Keep only last 60 seconds
+        if len(self.points_cf) > 60:
+            self.points_cf.pop(0)
+            self.points_g.pop(0)
+            self.points_cf = [(x - 1, y) for x, y in self.points_cf]
+            self.points_g = [(x - 1, y) for x, y in self.points_g]
+
+        # Auto-scale Y Axis
+        max_v = max(
+            max([y for x, y in self.points_cf] or [0]), 
+            max([y for x, y in self.points_g] or [0])
+        )
+        target_ymax = max(100, math.ceil(max_v / 50) * 50) # Steps of 50ms
+        self.graph.ymax = int(target_ymax)
+        self.graph.y_ticks_major = int(target_ymax / 5)
+
+        self.plot_cf.points = self.points_cf
+        self.plot_g.points = self.points_g
+
+# =========================
+#   3. GRAPH POPUP
 # =========================
 class AppGraphPopup(ModalView):
     def __init__(self, app_name, **kwargs):
         super().__init__(**kwargs)
         self.size_hint = (0.9, 0.7)
         self.auto_dismiss = True
-        
         layout = BoxLayout(orientation='vertical', padding=10)
         header = BoxLayout(size_hint_y=None, height=dp(30))
         header.add_widget(Label(text=f"Traffic: {app_name}", bold=True, font_size='18sp'))
         close_btn = Button(text="Close", size_hint_x=None, width=100)
         close_btn.bind(on_release=self.dismiss)
         header.add_widget(close_btn)
-        
         layout.add_widget(header)
         self.graph_widget = TrafficGraph()
         layout.add_widget(self.graph_widget)
@@ -120,27 +164,17 @@ class AppGraphPopup(ModalView):
 
 
 # =========================
-#   3. TABLE HEADER
+#   4. TABLE COMPONENTS
 # =========================
 class TableHeader(BoxLayout):
     def update_icons(self, sort_key, sort_desc):
-        """Updates header text to show correct arrow on the active column."""
-        # 1. Reset all labels base text (RENAMED AS REQUESTED)
         self.btn_name.text = "APPLICATION (Sort A-Z)"
         self.btn_down.text = "DOWNLOAD"
         self.btn_up.text = "UPLOAD"
-
-        # 2. Determine arrow symbol (USING SAFE CHARACTERS)
-        # 'v' and '^' work in ALL fonts. 
         arrow = " v" if sort_desc else " ^"
-
-        # 3. Append arrow to the active column's button text
-        if sort_key == 'name':
-            self.btn_name.text += arrow
-        elif sort_key == 'download':
-            self.btn_down.text += arrow
-        elif sort_key == 'upload':
-            self.btn_up.text += arrow
+        if sort_key == 'name': self.btn_name.text += arrow
+        elif sort_key == 'download': self.btn_down.text += arrow
+        elif sort_key == 'upload': self.btn_up.text += arrow
 
     def __init__(self, sort_callback, **kwargs):
         super().__init__(**kwargs)
@@ -148,18 +182,11 @@ class TableHeader(BoxLayout):
         self.height = dp(40)
         self.padding = (dp(10), 0)
         
-        # Helper to create our new HoverButtons
         def create_header_btn(text, key, color, size_x):
-            btn = HoverButton( 
-                text=text, 
-                size_hint_x=size_x, 
-                color=color,
-                bold=True
-            )
+            btn = HoverButton(text=text, size_hint_x=size_x, color=color, bold=True)
             btn.bind(on_release=lambda x: sort_callback(key))
             return btn
 
-        # Create buttons (Initial text will be overwritten by update_icons immediately)
         self.btn_name = create_header_btn("APPLICATION (Sort A-Z)", 'name', [1,1,0,1], 0.5)
         self.btn_down = create_header_btn("DOWNLOAD", 'download', COLOR_DOWN, 0.25)
         self.btn_up = create_header_btn("UPLOAD", 'upload', COLOR_UP, 0.25)
@@ -168,10 +195,6 @@ class TableHeader(BoxLayout):
         self.add_widget(self.btn_down)
         self.add_widget(self.btn_up)
 
-
-# =========================
-#   4. APP ROW
-# =========================
 class AppRow(BoxLayout):
     def __init__(self, app_name, **kwargs):
         super().__init__(**kwargs)
@@ -180,36 +203,22 @@ class AppRow(BoxLayout):
         self.height = dp(40)
         self.padding = (dp(10), 0)
         self.popup = None
-
-        # --- ADD TABLE SEPARATOR LINE ---
         with self.canvas.before:
-            Color(0.3, 0.3, 0.3, 1) # Subtle dark grey for the line
-            # Create a 1-pixel high rectangle at the bottom of the row
+            Color(0.3, 0.3, 0.3, 1) 
             self.rect = Rectangle(size=(self.width, 1), pos=(self.x, self.y))
-        # Bind to size/pos changes so the line stretches with the row
         self.bind(pos=self.update_rect, size=self.update_rect)
 
-        self.lbl_name = Label(
-            text=app_name, 
-            size_hint_x=0.5, 
-            halign='left', 
-            valign='middle',
-            shorten=True,
-            color=COLOR_TEXT
-        )
+        self.lbl_name = Label(text=app_name, size_hint_x=0.5, halign='left', valign='middle', shorten=True, color=COLOR_TEXT)
         self.lbl_name.bind(size=self.lbl_name.setter('text_size'))
         self.add_widget(self.lbl_name)
 
         self.lbl_down = Label(text="0.00", size_hint_x=0.25, color=COLOR_DOWN)
         self.add_widget(self.lbl_down)
-
         self.lbl_up = Label(text="0.00", size_hint_x=0.25, color=COLOR_UP)
         self.add_widget(self.lbl_up)
-
         self.dropdown = self._create_dropdown()
 
     def update_rect(self, *args):
-        """Keeps the separator line positioned correctly."""
         self.rect.pos = self.pos
         self.rect.size = (self.width, 1)
 
@@ -225,7 +234,6 @@ class AppRow(BoxLayout):
             btn = Button(text=text, size_hint_y=None, height=dp(30), font_size="13sp")
             btn.bind(on_release=lambda *_: (cb(), dropdown.dismiss()))
             dropdown.add_widget(btn)
-        
         add_item("Show Graph", self.open_graph)
         add_item("Close App", self.close_app)
         return dropdown
@@ -247,94 +255,65 @@ class AppRow(BoxLayout):
                     proc.terminate()
             except Exception: pass
 
-
 # =========================
-#   5. APP DASHBOARD
+#   5. DASHBOARD
 # =========================
 class AppDashboard(BoxLayout):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self.orientation = "vertical"
-        
-        # SORTING STATE
         self.sort_key = 'download'
         self.sort_desc = True
-
-        # Create header and keep a reference to it
         self.header = TableHeader(self.change_sort)
         self.add_widget(self.header)
-        
         self.scroll_view = ScrollView(size_hint=(1, 1), do_scroll_x=False)
         self.rows_container = BoxLayout(orientation='vertical', size_hint_y=None)
         self.rows_container.bind(minimum_height=self.rows_container.setter('height'))
         self.scroll_view.add_widget(self.rows_container)
         self.add_widget(self.scroll_view)
         self.rows = {}
-
-        # Set initial arrows on headers
         self.header.update_icons(self.sort_key, self.sort_desc)
 
     def change_sort(self, key):
-        """Called when user clicks a header button"""
-        if self.sort_key == key:
-            self.sort_desc = not self.sort_desc
-        else:
-            self.sort_key = key
-            self.sort_desc = True
-        
-        # Update header icons immediately
+        if self.sort_key == key: self.sort_desc = not self.sort_desc
+        else: self.sort_key = key; self.sort_desc = True
         self.header.update_icons(self.sort_key, self.sort_desc)
 
     def update_apps(self, rates):
         current_apps = set(rates.keys())
         existing_apps = set(self.rows.keys())
-        
         for app in existing_apps - current_apps:
             self.rows_container.remove_widget(self.rows[app])
             del self.rows[app]
-
-        # --- SORTING LOGIC ---
+        
         data_list = list(rates.items())
-        if self.sort_key == 'name':
-            data_list.sort(key=lambda x: x[0].lower(), reverse=not self.sort_desc)
-        elif self.sort_key == 'download':
-            data_list.sort(key=lambda x: x[1][0], reverse=self.sort_desc)
-        elif self.sort_key == 'upload':
-            data_list.sort(key=lambda x: x[1][1], reverse=self.sort_desc)
+        if self.sort_key == 'name': data_list.sort(key=lambda x: x[0].lower(), reverse=not self.sort_desc)
+        elif self.sort_key == 'download': data_list.sort(key=lambda x: x[1][0], reverse=self.sort_desc)
+        elif self.sort_key == 'upload': data_list.sort(key=lambda x: x[1][1], reverse=self.sort_desc)
 
-        # --- RENDER IN ORDER ---
         self.rows_container.clear_widgets()
         for app_name, (down, up) in data_list:
-            if app_name not in self.rows:
-                self.rows[app_name] = AppRow(app_name)
-            
+            if app_name not in self.rows: self.rows[app_name] = AppRow(app_name)
             self.rows[app_name].update_data(down, up)
             self.rows_container.add_widget(self.rows[app_name])
 
-
 # =========================
-#   6. LOG VIEWER CLASSES
+#   6. LOG VIEWER
 # =========================
-
 class LogRow(BoxLayout):
     def __init__(self, log_entry, **kwargs):
         super().__init__(**kwargs)
         self.size_hint_y = None
         self.height = dp(30)
-        self.log_entry = log_entry # (ts, app, down, up, src, dst)
-        
+        self.log_entry = log_entry 
         ts = datetime.datetime.fromtimestamp(log_entry[0]).strftime('%H:%M:%S')
         self.add_widget(Label(text=ts, size_hint_x=0.15))
-        
         self.app_name = log_entry[1]
         self.add_widget(Label(text=self.app_name, size_hint_x=0.25, shorten=True))
-        
         spd = f"D:{log_entry[2]:.1f} U:{log_entry[3]:.1f}"
         self.add_widget(Label(text=spd, size_hint_x=0.2))
-        
         ips = f"{log_entry[4]} -> {log_entry[5]}"
         self.add_widget(Label(text=ips, size_hint_x=0.4, font_size='11sp'))
-
         self.dropdown = DropDown()
         btn_loc = Button(text="Open Location", size_hint_y=None, height=dp(30))
         btn_loc.bind(on_release=lambda x: (self.open_location(), self.dropdown.dismiss()))
@@ -354,15 +333,10 @@ class LogRow(BoxLayout):
                     exe_path = proc.info['exe']
                     break
             except: pass
-        
         if exe_path and os.path.exists(exe_path):
-            if platform.system() == "Windows":
-                subprocess.Popen(['explorer', '/select,', exe_path])
-            elif platform.system() == "Linux":
-                subprocess.Popen(['xdg-open', os.path.dirname(exe_path)])
-        else:
-            print(f"Path not found for {self.app_name}")
-
+            if platform.system() == "Windows": subprocess.Popen(['explorer', '/select,', exe_path])
+            elif platform.system() == "Linux": subprocess.Popen(['xdg-open', os.path.dirname(exe_path)])
+        else: print(f"Path not found for {self.app_name}")
 
 class LogViewer(ModalView):
     def __init__(self, aggregator, **kwargs):
@@ -370,61 +344,45 @@ class LogViewer(ModalView):
         self.aggregator = aggregator
         self.size_hint = (0.95, 0.9)
         self.current_logs = []
-        
         layout = BoxLayout(orientation='vertical', padding=10)
-        
-        # Header
         header = BoxLayout(size_hint_y=None, height=dp(40), spacing=10)
         header.add_widget(Label(text="Instance Logs", bold=True, font_size='20sp', size_hint_x=0.3))
-        
         self.search_input = TextInput(hint_text="Search App Name...", size_hint_x=0.5, multiline=False)
         self.search_input.bind(text=self.on_search)
         header.add_widget(self.search_input)
-        
         btn_close = Button(text="Close", size_hint_x=0.2)
         btn_close.bind(on_release=self.dismiss)
         header.add_widget(btn_close)
         layout.add_widget(header)
-
-        # Actions
         actions = BoxLayout(size_hint_y=None, height=dp(40), spacing=10)
         btn_refresh = Button(text="Refresh", size_hint_x=None, width=100)
         btn_refresh.bind(on_release=self.refresh_logs)
         actions.add_widget(btn_refresh)
-        
         btn_export = Button(text="Export to CSV", size_hint_x=None, width=120)
         btn_export.bind(on_release=self.export_csv)
         actions.add_widget(btn_export)
-        actions.add_widget(Label(text="")) # Spacer
+        actions.add_widget(Label(text="")) 
         layout.add_widget(actions)
-        
-        # Columns
         headers = BoxLayout(size_hint_y=None, height=dp(30))
         headers.add_widget(Label(text="Time", size_hint_x=0.15, bold=True, color=[1,1,0,1]))
         headers.add_widget(Label(text="App", size_hint_x=0.25, bold=True, color=[1,1,0,1]))
         headers.add_widget(Label(text="Speed (KB/s)", size_hint_x=0.2, bold=True, color=[1,1,0,1]))
         headers.add_widget(Label(text="Src -> Dst IP", size_hint_x=0.4, bold=True, color=[1,1,0,1]))
         layout.add_widget(headers)
-
-        # List
         self.scroll = ScrollView()
         self.list_container = BoxLayout(orientation='vertical', size_hint_y=None)
         self.list_container.bind(minimum_height=self.list_container.setter('height'))
         self.scroll.add_widget(self.list_container)
         layout.add_widget(self.scroll)
         self.add_widget(layout)
-        
         self.refresh_logs()
 
-    def on_search(self, instance, value):
-        self.refresh_logs()
-
+    def on_search(self, instance, value): self.refresh_logs()
     def refresh_logs(self, *args):
         self.list_container.clear_widgets()
         search_text = self.search_input.text.strip()
         self.current_logs = self.aggregator.get_logs(app_filter=search_text if search_text else None)
-        for log in self.current_logs:
-            self.list_container.add_widget(LogRow(log))
+        for log in self.current_logs: self.list_container.add_widget(LogRow(log))
 
     def export_csv(self, *args):
         if not self.current_logs: return
@@ -436,12 +394,9 @@ class LogViewer(ModalView):
                 for log in self.current_logs:
                     ts_str = datetime.datetime.fromtimestamp(log[0]).strftime('%Y-%m-%d %H:%M:%S')
                     writer.writerow([ts_str, log[1], log[2], log[3], log[4], log[5]])
-            
             print(f"Exported to {filename}")
-            # Button feedback
             original_text = args[0].text
             args[0].text = "Saved!"
             from kivy.clock import Clock
             Clock.schedule_once(lambda dt: setattr(args[0], 'text', original_text), 2)
-        except Exception as e:
-            print(f"Export Error: {e}")
+        except Exception as e: print(f"Export Error: {e}")
