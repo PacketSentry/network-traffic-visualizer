@@ -1,3 +1,4 @@
+import psutil
 from kivy.config import Config
 Config.set('input', 'mouse', 'mouse,multitouch_on_demand')
 
@@ -32,17 +33,35 @@ class NetworkApp(App):
         Clock.schedule_interval(self.update_ui, 1.0)
         Clock.schedule_interval(self.save_database, 5.0)
 
+        # --- NEW: Initialize Hardware Counter ---
+        self.last_net_io = psutil.net_io_counters()
+
     def update_ui(self, dt):
         # --- Update Traffic Tab ---
         traffic_data = self.sniffer.get_traffic_data()
         rates = self.aggregator.calculate_rates(traffic_data)
         
+        # --- NEW: Hybrid Speed Fix (Accurate Hardware Stats) ---
+        current_net_io = psutil.net_io_counters()
+        
+        # Calculate bytes since last second
+        bytes_recv = current_net_io.bytes_recv - self.last_net_io.bytes_recv
+        bytes_sent = current_net_io.bytes_sent - self.last_net_io.bytes_sent
+        
+        # Convert to KB/s
+        download_kb = bytes_recv / 1024
+        upload_kb = bytes_sent / 1024
+        
+        # Save for next loop
+        self.last_net_io = current_net_io
+
+        # Update the Main Graph with ACCURATE numbers
         if "main_graph" in self.root.ids:
-            total_download = sum(down for down, up in rates.values())
-            total_upload = sum(up for down, up in rates.values())
-            self.root.ids.main_graph.update_graph(total_download, total_upload)
+            self.root.ids.main_graph.update_graph(download_kb, upload_kb)
+        # -------------------------------------------------------
 
         if "dashboard" in self.root.ids:
+            # Keep using Sniffer data for the App List (Details)
             self.root.ids.dashboard.update_apps(rates)
             
         # --- Update Latency Tab ---
