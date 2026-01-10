@@ -36,10 +36,6 @@ class NetworkPinger:
             for name, ip in self.targets.items():
                 if not self.running: break
                 latency = self._measure_ping(ip)
-                
-                # DEBUG: This will now definitely print a number!
-                if name == "Mumbai Server":
-                    print(f"[DEBUG] Ping to {name} ({ip}): {latency} ms")
 
                 with self.lock:
                     self.pings[name] = latency
