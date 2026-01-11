@@ -21,6 +21,11 @@ class TrafficAggregator:
         log_entries = []
         
         for (app_name, src_ip, dst_ip), (new_down, new_up) in fresh_traffic_data.items():
+            # --- FILTER: Hide ICMP/Ping from Dashboard & Logs ---
+            if app_name == "System (ICMP/Ping)":
+                continue
+            # ----------------------------------------------------
+
             if app_name not in self.global_totals:
                 self.global_totals[app_name] = [0, 0]
                 if app_name not in current_rates_ui:
@@ -47,7 +52,6 @@ class TrafficAggregator:
             self.cloud.add_logs(log_entries)
             
         # 2. [NEW] Send Live Status (Active Apps) to Cloud Client
-        # This allows the web dashboard to see real-time apps and show the "Close" button.
         self.cloud.update_status(current_rates_ui)
             
         return current_rates_ui

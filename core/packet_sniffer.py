@@ -97,7 +97,6 @@ class PacketSniffer:
                 pass
         
         elif "ARP" in pkt:
-            # ARP doesn't have IP layers in the same way, skip or log simply
             pass
 
     def _get_process_by_port(self, port):
